@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+__pycache__
+studio-data
+recovery
+media-pool
+voices
+output
+renders
+*.mp4
+*.mp3
+*.wav

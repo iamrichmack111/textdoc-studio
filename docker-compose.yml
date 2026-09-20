@@ -1,0 +1,13 @@
+services:
+  textdoc-studio:
+    build: .
+    container_name: textdoc-studio
+    ports: ["8014:8014"]
+    environment:
+      TEXTDOC_ROOT: /app
+      TEXTDOC_STUDIO_DATA: /app/studio-data
+      TEXTDOC_STUDIO_SECRET: ${TEXTDOC_STUDIO_SECRET:-change-me}
+    volumes:
+      - ./studio-data:/app/studio-data
+      - ./voices:/app/voices:ro
+    restart: unless-stopped
