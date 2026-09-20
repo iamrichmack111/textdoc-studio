@@ -1,0 +1,923 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{{p.title}} · TextDoc</title><link rel="stylesheet" href="/static/app.css"></head><body><header class="top editor-top">
+
+  <a class="back-btn" href="/" title="Documentaries">←</a>
+
+  <div class="brand-block editor-brand">
+    <div class="brand">TEXTDOC <b>STUDIO</b></div>
+    <div class="brand-sub">DIRECTOR</div>
+  </div>
+
+  <div class="project-title-wrap">
+    <div class="tiny-label">PROJECT</div>
+    <input id="title" value="{{p.title}}">
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="editor-status">
+    <span class="status-dot"></span>
+    LOCAL
+  </div>
+
+  <button class="btn ghost" onclick="openSceneGuide()">? Scene Guide</button>
+
+  <button class="btn ghost" onclick="openExport()">↓ Export</button>
+
+  <button class="btn" onclick="save()">Save</button>
+
+  <button class="btn gold render-main" onclick="renderDoc()">
+    Render
+    <span>▶</span>
+  </button>
+
+</header><main class="shell" style="padding-top:16px"><div class="editor"><section class="pane"><div class="panehead">
+  <div>
+    <span class="pane-kicker">ASSETS</span>
+    <strong>Media</strong>
+  </div>
+
+  <span class="spacer"></span>
+
+  <button class="mini-action" onclick="autoAssignImages()" title="Automatically distribute images">
+    Auto Assign
+  </button>
+
+  <span id="mc" class="count-badge"></span>
+</div><div class="scroll"><label class="drop">Drop images here<br><small>or click to browse</small><input id="files" type="file" accept="image/*" multiple hidden></label><div id="media" class="media"></div></div></section><section class="pane"><div class="panehead">
+  <div>
+    <span class="pane-kicker">DOCUMENTARY</span>
+    <strong>Story</strong>
+  </div>
+
+  <span class="spacer"></span>
+
+  <button class="mini-action" onclick="pasteStory()">Paste Story</button>
+  <button class="mini-action gold-mini" onclick="addScene('narration')">＋ Scene</button>
+</div><div class="scroll"><div id="timeline" class="timeline"></div><div id="preview" style="margin-top:18px"></div></div></section><section class="pane right"><div class="panehead inspector-head">
+      <div>
+        <span class="pane-kicker">DIRECTOR</span>
+        <strong>Inspector</strong>
+      </div>
+    </div><div class="scroll"><div class="tabs"><span class="tab on" onclick="tab('scene',this)">Scene</span><span class="tab" onclick="tab('youtube',this)">YouTube</span></div><div id="scenePanel"><div id="empty" class="muted">Select a scene.</div><div id="fields" hidden><div class="types" id="types"></div><div class="field"><label>Text / narration</label><textarea id="stext"></textarea></div><div class="field"><label>Picture</label><select id="simage"></select></div><div class="field"><label>Title / label</label><input id="slabel"></div><div class="field"><label>Source / credit</label><input id="source" placeholder="URL, archive, publication, credit..."></div><button class="btn" onclick="removeScene()">Delete scene</button></div></div><div id="youtubePanel" hidden><div class="field"><label>YouTube title</label><input id="ytitle"></div><div class="field"><label>Description intro</label><textarea id="ydesc"></textarea></div><div class="field"><label>Tags — comma separated</label><textarea id="ytags" style="min-height:70px"></textarea></div><div class="field"><label>Category</label><select id="ycat"><option value="27">Education</option><option value="22">People & Blogs</option><option value="24">Entertainment</option><option value="28">Science & Technology</option></select></div><button class="btn" onclick="copyMeta()">Copy description + sources</button> <button class="btn gold" onclick="uploadYT()">Upload PRIVATE</button><div id="ytstatus" class="muted" style="margin-top:12px"></div></div></div></section></div></main>
+<div id="importModal" class="import-modal" hidden>
+  <div class="import-backdrop" onclick="closeImporter()"></div>
+
+  <div class="import-card">
+    <div class="import-head">
+      <div>
+        <div class="import-kicker">TEXTDOC STORY IMPORTER</div>
+        <h2>Import documentary script</h2>
+        <p>
+          Paste the entire script. TextDoc will turn each tagged section
+          into a separate scene card.
+        </p>
+      </div>
+      <button class="btn ghost" onclick="closeImporter()">✕</button>
+    </div>
+
+    <div class="import-format">
+      <span>[NARRATION]</span>
+      <span>[CHAPTER]</span>
+      <span>[QUOTE]</span>
+      <span>[PUNCH]</span>
+      <span>[WORDS]</span>
+      <span>[DOCUMENT]</span>
+      <span>[MAP]</span>
+      <span>[B-ROLL]</span>
+    </div>
+
+    <textarea
+      id="storyImport"
+      class="story-import"
+      spellcheck="true"
+      placeholder="[CHAPTER]
+THE OTHER SIDE
+
+[NARRATION]
+Jewish tradition contains...
+
+[QUOTE]
+The other side.
+SOURCE: Source or credit
+
+[PUNCH]
+WORDS COULD BECOME OBJECTS OF POWER."
+    ></textarea>
+
+    <div class="import-foot">
+      <div>
+        <b id="importCount">0 scenes detected</b>
+        <div class="muted">
+          SOURCE:, IMAGE:, TITLE: and LABEL: are stored as metadata and are not narrated.
+        </div>
+      </div>
+      <div class="import-actions">
+        <button class="btn" onclick="closeImporter()">Cancel</button>
+        <button class="btn gold" id="importButton" onclick="importStory()">
+          Import Scenes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="renderbar" class="renderbar"><b id="rmsg">Rendering</b><span id="rpct" style="float:right">0%</span><div class="bar"><i id="rfill"></i></div></div>
+<script>
+const PID={{p.id|tojson}}, TYPES=['narration','chapter','quote','punch','words','document','map','b-roll']; let P=null,active=-1,dragIndex=null;
+function sceneId(){
+  if(window.crypto && typeof window.crypto.randomUUID==='function'){
+    return window.sceneId();
+  }
+
+  if(window.crypto && typeof window.crypto.getRandomValues==='function'){
+    const b=new Uint8Array(16);
+    window.crypto.getRandomValues(b);
+    b[6]=(b[6]&15)|64;
+    b[8]=(b[8]&63)|128;
+
+    const h=[...b].map(x=>x.toString(16).padStart(2,'0')).join('');
+
+    return h.slice(0,8)+'-'+
+           h.slice(8,12)+'-'+
+           h.slice(12,16)+'-'+
+           h.slice(16,20)+'-'+
+           h.slice(20);
+  }
+
+  return 'scene-'+Date.now().toString(36)+'-'+
+         Math.random().toString(36).slice(2,10);
+}
+
+async function load(){P=await (await fetch('/api/project/'+PID)).json(); title.value=P.title; ytitle.value=P.youtube?.title||P.title; ydesc.value=P.youtube?.description||''; ytags.value=(P.youtube?.tags||[]).join(', '); ycat.value=P.youtube?.categoryId||'27'; drawMedia();draw(); if(P.has_video) showVideo()}
+function drawMedia(){
+  media.innerHTML='';
+  mc.textContent=P.media.length;
+
+  for(const n of P.media){
+    const d=document.createElement('div');
+
+    d.className='thumb';
+    d.draggable=true;
+    d.dataset.name=n;
+
+    d.innerHTML=`
+      <button
+        type="button"
+        class="media-delete"
+        title="Delete ${esc(n)}"
+      >×</button>
+
+      <img
+        src="/media/${PID}/${encodeURIComponent(n)}"
+        onerror="this.classList.add('broken-image')"
+      >
+
+      <span>${esc(n)}</span>
+    `;
+
+    d.ondragstart=e=>{
+      e.dataTransfer.setData('text/image',n);
+    };
+
+    const del=d.querySelector('.media-delete');
+
+    del.onclick=async e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      await deleteMedia(n);
+    };
+
+    media.appendChild(d);
+  }
+
+  updateImageSelect();
+}
+
+async function deleteMedia(name){
+  if(!confirm('Delete "'+name+'" from this project?')){
+    return;
+  }
+
+  try{
+    const response=await fetch(
+      '/api/project/'+PID+'/media/'+encodeURIComponent(name),
+      {method:'DELETE'}
+    );
+
+    const result=await response.json();
+
+    if(!response.ok || !result.ok){
+      throw new Error(
+        result.error || 'Server rejected deletion'
+      );
+    }
+
+    P.media=P.media.filter(x=>x!==name);
+
+    for(const scene of P.scenes){
+      if(scene.image===name){
+        scene.image='';
+      }
+
+      if(scene.secondary===name){
+        scene.secondary='';
+      }
+    }
+
+    drawMedia();
+    draw();
+
+    if(active>=0){
+      selectScene(active);
+    }
+
+  }catch(err){
+    console.error('TextDoc media delete:',err);
+    alert('Delete failed: '+err.message);
+  }
+}
+function draw(){
+  timeline.innerHTML='';
+
+  P.scenes.forEach((s,i)=>{
+    const info=SCENE_INFO[s.type]||{
+      icon:'•',
+      title:s.type,
+      group:'SCENE',
+      desc:''
+    };
+
+    const warning=sceneWarning(s);
+
+    let d=document.createElement('div');
+
+    d.className=
+      'scene scene-'+s.type+
+      (i===active?' active':'')+
+      (warning?' has-warning':'');
+
+    d.draggable=true;
+    d.dataset.i=i;
+
+    const image=s.image
+      ? `<div class="scene-thumb-wrap">
+           <img class="mini" src="/media/${PID}/${encodeURIComponent(s.image)}">
+           <span>${esc(s.image)}</span>
+         </div>`
+      : `<div class="scene-thumb-wrap empty-thumb">
+           <div class="mini">${info.icon}</div>
+           <span>No visual</span>
+         </div>`;
+
+    d.innerHTML=`
+      <div class="handle">≡</div>
+
+      <div class="scene-number">
+        ${String(i+1).padStart(2,'0')}
+      </div>
+
+      <div class="scene-content">
+
+        <div class="scene-card-top">
+          <span class="scene-icon">${info.icon}</span>
+          <span class="stype">${info.title}</span>
+          <span class="scene-group">${info.group}</span>
+        </div>
+
+        <div class="txt">${esc(s.text||'Empty scene')}</div>
+
+        ${warning
+          ? `<div class="scene-warning">⚠ ${esc(warning)}</div>`
+          : ''
+        }
+
+      </div>
+
+      ${image}
+    `;
+
+    d.onclick=()=>selectScene(i);
+
+    d.ondragstart=e=>{
+      dragIndex=i;
+      e.dataTransfer.setData('text/scene',i);
+    };
+
+    d.ondragover=e=>e.preventDefault();
+
+    d.ondrop=e=>{
+      e.preventDefault();
+
+      let img=e.dataTransfer.getData('text/image');
+
+      if(img){
+        P.scenes[i].image=img;
+        selectScene(i);
+        save();
+        return;
+      }
+
+      let from=Number(e.dataTransfer.getData('text/scene'));
+
+      if(Number.isInteger(from)){
+        let x=P.scenes.splice(from,1)[0];
+        P.scenes.splice(i,0,x);
+        active=i;
+        draw();
+        save();
+      }
+    };
+
+    timeline.appendChild(d);
+  });
+}
+function selectScene(i){
+  active=i;
+  draw();
+
+  empty.hidden=true;
+  fields.hidden=false;
+
+  let s=P.scenes[i];
+
+  types.innerHTML=TYPES.map(t=>{
+    const info=SCENE_INFO[t]||{icon:'•',title:t};
+
+    return `
+      <button
+        class="typebtn ${s.type===t?'on':''}"
+        onclick="setType('${t}')"
+        title="${esc(info.desc||'')}"
+      >
+        <span>${info.icon}</span>
+        ${info.title}
+      </button>
+    `;
+  }).join('');
+
+  let info=SCENE_INFO[s.type];
+
+  let old=document.getElementById('sceneHelp');
+
+  if(old)old.remove();
+
+  if(info){
+    let help=document.createElement('div');
+    help.id='sceneHelp';
+    help.className='scene-help';
+
+    let warning=sceneWarning(s);
+
+    help.innerHTML=`
+      <div class="scene-help-top">
+        <span>${info.icon}</span>
+        <div>
+          <b>${info.title}</b>
+          <small>${info.group}</small>
+        </div>
+      </div>
+
+      <p>${info.desc}</p>
+
+      ${warning
+        ? `<div class="inspector-warning">⚠ ${esc(warning)}</div>`
+        : ''
+      }
+    `;
+
+    types.insertAdjacentElement('afterend',help);
+  }
+
+  stext.value=s.text||'';
+  slabel.value=s.label||'';
+  source.value=s.source||'';
+
+  updateImageSelect();
+  simage.value=s.image||'';
+}
+function updateImageSelect(){if(!window.simage)return;simage.innerHTML='<option value="">Auto / no image</option>'+P.media.map(n=>`<option>${esc(n)}</option>`).join('')}
+function setType(t){P.scenes[active].type=t;selectScene(active);save()}
+function addScene(type,text=''){P.scenes.push({id:sceneId(),type,text,image:'',source:'',label:''});active=P.scenes.length-1;draw();selectScene(active);save()}
+function removeScene(){if(active<0)return;P.scenes.splice(active,1);active=-1;fields.hidden=true;empty.hidden=false;draw();save()}
+function pasteStory(){
+  const modal=document.getElementById('importModal');
+  const box=document.getElementById('storyImport');
+  const count=document.getElementById('importCount');
+
+  box.value='';
+  count.textContent='Paste script to detect scenes';
+  modal.hidden=false;
+  document.body.classList.add('modal-open');
+
+  setTimeout(()=>box.focus(),50);
+}
+
+function closeImporter(){
+  document.getElementById('importModal').hidden=true;
+  document.body.classList.remove('modal-open');
+}
+
+function parseImportedStory(raw){
+  raw=String(raw||'').replace(/\r\n?/g,'\n').trim();
+  if(!raw)return [];
+
+  const valid={
+    'NARRATION':'narration',
+    'CHAPTER':'chapter',
+    'QUOTE':'quote',
+    'PUNCH':'punch',
+    'WORDS':'words',
+    'DOCUMENT':'document',
+    'MAP':'map',
+    'B-ROLL':'b-roll',
+    'BROLL':'b-roll'
+  };
+
+  const scenes=[];
+  let cur=null;
+
+  function finish(){
+    if(!cur)return;
+
+    cur.text=cur.text.trim();
+
+    if(cur.text || cur.label || cur.source || cur.image){
+      scenes.push(cur);
+    }
+
+    cur=null;
+  }
+
+  for(const original of raw.split('\n')){
+    const line=original.trim();
+
+    const match=line.match(/^\[([^\]]+)\]$/);
+
+    if(match){
+      const key=match[1].trim().toUpperCase();
+
+      if(valid[key]){
+        finish();
+
+        cur={
+          id:sceneId(),
+          type:valid[key],
+          text:'',
+          image:'',
+          source:'',
+          label:''
+        };
+
+        continue;
+      }
+    }
+
+    if(!cur){
+      cur={
+        id:sceneId(),
+        type:'narration',
+        text:'',
+        image:'',
+        source:'',
+        label:''
+      };
+    }
+
+    const meta=line.match(/^(SOURCE|IMAGE|TITLE|LABEL)\s*:\s*(.*)$/i);
+
+    if(meta){
+      const key=meta[1].toUpperCase();
+      const value=meta[2].trim();
+
+      if(key==='SOURCE') cur.source=value;
+      else if(key==='IMAGE') cur.image=value;
+      else cur.label=value;
+
+      continue;
+    }
+
+    if(cur.type==='chapter' && !cur.label && line){
+      cur.label=line;
+      continue;
+    }
+
+    cur.text += original+'\n';
+  }
+
+  finish();
+  return scenes;
+}
+
+function refreshImportCount(){
+  const box=document.getElementById('storyImport');
+  const count=document.getElementById('importCount');
+  const button=document.getElementById('importButton');
+
+  const scenes=parseImportedStory(box.value);
+
+  count.textContent=
+    scenes.length+' scene'+(scenes.length===1?'':'s')+' detected';
+
+  button.disabled=scenes.length===0;
+}
+
+async function importStory(){
+  try{
+    const box=document.getElementById('storyImport');
+    const scenes=parseImportedStory(box.value);
+
+    if(!scenes.length){
+      alert('No scenes detected. Make sure the script contains tags such as [NARRATION] or [CHAPTER].');
+      return;
+    }
+
+    if(!P || !Array.isArray(P.scenes)){
+      alert('Project data has not loaded. Refresh the page and try again.');
+      return;
+    }
+
+    for(const scene of scenes){
+      if(scene.image && Array.isArray(P.media)){
+        const wanted=scene.image.toLowerCase();
+        const found=P.media.find(
+          name=>String(name).toLowerCase()===wanted
+        );
+        if(found)scene.image=found;
+      }
+    }
+
+    P.scenes.push(...scenes);
+
+    active=P.scenes.length-scenes.length;
+
+    closeImporter();
+    draw();
+    selectScene(active);
+
+    await save();
+
+    console.log(
+      'TextDoc imported',
+      scenes.length,
+      'scenes'
+    );
+
+  }catch(err){
+    console.error('TextDoc importer error:',err);
+    alert('Importer error: '+err.message);
+  }
+}
+
+document.addEventListener('input',function(e){
+  if(e.target && e.target.id==='storyImport'){
+    refreshImportCount();
+  }
+});
+
+document.addEventListener('paste',function(e){
+  if(e.target && e.target.id==='storyImport'){
+    setTimeout(refreshImportCount,10);
+  }
+});
+
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    const modal=document.getElementById('importModal');
+    if(modal && !modal.hidden)closeImporter();
+  }
+});
+
+async function save(){if(active>=0){let s=P.scenes[active];s.text=stext.value;s.image=simage.value;s.label=slabel.value;s.source=source.value}P.title=title.value;
+P.format=P.format||'16:9';
+P.quality=P.quality||'1080p';
+P.youtube={title:ytitle.value,description:ydesc.value,tags:ytags.value.split(',').map(x=>x.trim()).filter(Boolean),categoryId:ycat.value};await fetch('/api/project/'+PID,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(P)});draw()}
+files.onchange=()=>upload(files.files);document.querySelector('.drop').ondragover=e=>e.preventDefault();document.querySelector('.drop').ondrop=e=>{e.preventDefault();upload(e.dataTransfer.files)};async function upload(fs){let f=new FormData();for(let x of fs)f.append('files',x);await fetch('/api/project/'+PID+'/upload',{method:'POST',body:f});await load()}
+async function renderDoc(){await save();renderbar.style.display='block';await fetch('/api/project/'+PID+'/render',{method:'POST'});pollRender()}
+async function pollRender(){let s=await (await fetch('/api/project/'+PID+'/status')).json();rmsg.textContent=s.message;rpct.textContent=s.progress+'%';rfill.style.width=s.progress+'%';if(s.state==='done'){setTimeout(()=>renderbar.style.display='none',1200);showVideo();return}if(s.state==='error'){rmsg.textContent='Render failed: '+s.message;return}setTimeout(pollRender,700)}
+function showVideo(){preview.innerHTML=`<video class="video" controls preload="metadata" src="/video/${PID}?v=${Date.now()}"></video>`}
+function tab(n,el){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));el.classList.add('on');scenePanel.hidden=n!=='scene';youtubePanel.hidden=n!=='youtube'}
+async function copyMeta(){await save();let q=await (await fetch('/api/project/'+PID)).json();await navigator.clipboard.writeText((q.youtube?.title||q.title)+'\n\n'+q.youtube_description+'\n\nTags: '+(q.youtube?.tags||[]).join(', '));ytstatus.textContent='✓ Metadata copied'}
+async function uploadYT(){await save();if(!confirm('Upload this finished video to YouTube as PRIVATE?'))return;let r=await fetch('/api/project/'+PID+'/youtube/private',{method:'POST'});let j=await r.json();if(j.error){ytstatus.textContent=j.error;return}pollYT()}
+async function pollYT(){let s=await (await fetch('/api/project/'+PID+'/youtube/status')).json();ytstatus.textContent=`${s.message} ${s.progress||0}%`;if(s.state==='done'){ytstatus.innerHTML=`✓ Private upload complete · Video ID ${s.video_id}`;return}if(s.state==='error')return;setTimeout(pollYT,1000)}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+[stext,simage,slabel,source,ytitle,ydesc,ytags,ycat].forEach(x=>x&&x.addEventListener('change',save));
+const SCENE_INFO={
+  narration:{
+    icon:'◉',
+    group:'STORY',
+    title:'Narration',
+    desc:'Standard documentary narration with cinematic imagery.'
+  },
+  chapter:{
+    icon:'§',
+    group:'STORY',
+    title:'Chapter',
+    desc:'Major section break. Typography-focused; assigned pictures are normally ignored.'
+  },
+  quote:{
+    icon:'❝',
+    group:'STORY',
+    title:'Quote',
+    desc:'Quotation treatment with attribution/source.'
+  },
+  punch:{
+    icon:'!',
+    group:'STORY',
+    title:'Punch',
+    desc:'Short dramatic typography statement. Best at 3–15 words.'
+  },
+  words:{
+    icon:'Aa',
+    group:'STORY',
+    title:'Words',
+    desc:'Sequential keyword treatment.'
+  },
+  document:{
+    icon:'▤',
+    group:'EVIDENCE',
+    title:'Document',
+    desc:'Preserves manuscripts, notices and archival pages as evidence.'
+  },
+  map:{
+    icon:'⌖',
+    group:'EVIDENCE',
+    title:'Map',
+    desc:'Geographic/map treatment.'
+  },
+  'b-roll':{
+    icon:'▶',
+    group:'VISUAL',
+    title:'B-roll',
+    desc:'Visual-first cinematic image scene.'
+  }
+};
+
+function sceneWarning(s){
+  const words=(s.text||'').trim().split(/\s+/).filter(Boolean).length;
+
+  if((s.type==='punch' || s.type==='chapter') && s.image){
+    return 'Picture assigned but this typography treatment normally ignores it.';
+  }
+
+  if(s.type==='punch' && words>15){
+    return 'Punch is long — consider shortening it.';
+  }
+
+  if((s.type==='document' || s.type==='map' || s.type==='b-roll') && !s.image){
+    return 'This scene works best with an assigned image.';
+  }
+
+  return '';
+}
+
+function mediaUseCount(name){
+  return P.scenes.filter(s=>s.image===name || s.secondary===name).length;
+}
+
+function autoAssignImages(){
+  if(!P.media.length){
+    alert('Upload pictures first.');
+    return;
+  }
+
+  const compatible=P.scenes.filter(
+    s=>['narration','document','map','b-roll'].includes(s.type)
+  );
+
+  if(!compatible.length){
+    alert('There are no photographic scenes to assign.');
+    return;
+  }
+
+  let cursor=0;
+  let previous='';
+
+  for(const scene of compatible){
+    if(scene.image)continue;
+
+    let chosen=P.media[cursor % P.media.length];
+
+    if(P.media.length>1 && chosen===previous){
+      cursor++;
+      chosen=P.media[cursor % P.media.length];
+    }
+
+    scene.image=chosen;
+    previous=chosen;
+    cursor++;
+  }
+
+  drawMedia();
+  draw();
+
+  if(active>=0)selectScene(active);
+
+  save();
+}
+
+function openSceneGuide(){
+  document.getElementById('guideModal').hidden=false;
+}
+
+function closeSceneGuide(){
+  document.getElementById('guideModal').hidden=true;
+}
+
+function preflightData(){
+  const photoScenes=P.scenes.filter(
+    s=>['narration','document','map','b-roll'].includes(s.type)
+  );
+
+  const missing=photoScenes.filter(s=>!s.image).length;
+
+  const unsourced=P.scenes.filter(
+    s=>(s.image || ['document','map'].includes(s.type)) && !s.source
+  ).length;
+
+  const used=new Set(
+    P.scenes.map(s=>s.image).filter(Boolean)
+  );
+
+  const repeated=[...used].filter(
+    n=>mediaUseCount(n)>1
+  ).length;
+
+  return {
+    scenes:P.scenes.length,
+    media:P.media.length,
+    missing,
+    unsourced,
+    repeated
+  };
+}
+
+function renderPreflight(){
+  const x=preflightData();
+
+  document.getElementById('preflight').innerHTML=`
+    <h3>Preflight</h3>
+
+    <div class="preflight-grid">
+      <div><strong>${x.scenes}</strong><span>Scenes</span></div>
+      <div><strong>${x.media}</strong><span>Pictures</span></div>
+      <div><strong>${x.missing}</strong><span>Missing visuals</span></div>
+      <div><strong>${x.repeated}</strong><span>Repeated images</span></div>
+    </div>
+
+    ${x.missing
+      ? `<p class="warn">⚠ ${x.missing} photographic scene${x.missing===1?'':'s'} without an image.</p>`
+      : '<p class="good">✓ Every photographic scene has an image.</p>'
+    }
+
+    ${x.unsourced
+      ? `<p class="warn">⚠ ${x.unsourced} evidence/image scene${x.unsourced===1?'':'s'} without source information.</p>`
+      : '<p class="good">✓ Source fields complete for visual evidence.</p>'
+    }
+  `;
+}
+
+function openExport(){
+  document.getElementById('projectFormat').value=P.format||'16:9';
+  document.getElementById('projectQuality').value=P.quality||'1080p';
+
+  document.getElementById('downloadMp4').href=
+    '/download/'+PID+'/video';
+
+  document.getElementById('downloadMp3').href=
+    '/download/'+PID+'/audio';
+
+  renderPreflight();
+
+  document.getElementById('exportModal').hidden=false;
+}
+
+function closeExport(){
+  document.getElementById('exportModal').hidden=true;
+}
+
+async function saveV2Settings(){
+  P.format=document.getElementById('projectFormat').value;
+  P.quality=document.getElementById('projectQuality').value;
+  await save();
+  renderPreflight();
+}
+
+
+load();
+</script>
+<div id="guideModal" class="v2modal" hidden>
+  <div class="v2modal-card guide-card">
+    <div class="v2modal-head">
+      <div>
+        <div class="eyebrow">TEXTDOC DIRECTOR</div>
+        <h2>Scene Type Guide</h2>
+      </div>
+      <button class="modal-x" onclick="closeSceneGuide()">×</button>
+    </div>
+
+    <div class="scene-groups">
+
+      <section>
+        <h3>STORY</h3>
+
+        <div class="guide-grid">
+          <article>
+            <b>◉ Narration</b>
+            <p>Standard documentary scene. Piper narrates while the selected image receives cinematic movement.</p>
+          </article>
+
+          <article>
+            <b>§ Chapter</b>
+            <p>Major section break with large typography. Normally does not use a photograph.</p>
+          </article>
+
+          <article>
+            <b>❝ Quote</b>
+            <p>Prominent quotation with attribution or source.</p>
+          </article>
+
+          <article>
+            <b>! Punch</b>
+            <p>Short dramatic statement. Best at roughly 3–15 words. Uses typography rather than a picture.</p>
+          </article>
+
+          <article>
+            <b>Aa Words</b>
+            <p>Sequential keywords or phrases for rhythmic visual emphasis.</p>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h3>EVIDENCE</h3>
+
+        <div class="guide-grid">
+          <article>
+            <b>▤ Document</b>
+            <p>Manuscripts, notices, newspaper pages, letters and archival evidence. Preserves document framing.</p>
+          </article>
+
+          <article>
+            <b>⌖ Map</b>
+            <p>Maps and geographic evidence. Designed for location-oriented movement and labels.</p>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h3>VISUAL</h3>
+
+        <div class="guide-grid">
+          <article>
+            <b>▶ B-roll</b>
+            <p>Visual-first scene with full-frame imagery and cinematic motion underneath narration.</p>
+          </article>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div id="exportModal" class="v2modal" hidden>
+  <div class="v2modal-card export-card">
+    <div class="v2modal-head">
+      <div>
+        <div class="eyebrow">DELIVERY</div>
+        <h2>Export Documentary</h2>
+      </div>
+      <button class="modal-x" onclick="closeExport()">×</button>
+    </div>
+
+    <div class="export-settings">
+      <label>
+        FORMAT
+        <select id="projectFormat" onchange="saveV2Settings()">
+          <option value="16:9">Documentary · 16:9</option>
+          <option value="9:16">Short · 9:16</option>
+        </select>
+      </label>
+
+      <label>
+        QUALITY
+        <select id="projectQuality" onchange="saveV2Settings()">
+          <option value="preview">Preview · Fast</option>
+          <option value="1080p">YouTube · 1080p</option>
+          <option value="1440p">YouTube HQ · 1440p</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="preflight" class="preflight"></div>
+
+    <div class="export-actions">
+      <a id="downloadMp4" class="download-btn">↓ Download MP4</a>
+      <a id="downloadMp3" class="download-btn secondary">↓ Download MP3</a>
+    </div>
+
+    <p class="export-note">
+      Format and quality are saved with the project. The current renderer remains 1080p/16:9 until the renderer-format upgrade is enabled.
+    </p>
+  </div>
+</div>
+
+</body></html>

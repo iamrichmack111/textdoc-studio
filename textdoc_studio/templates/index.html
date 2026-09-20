@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>TextDoc Studio</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+
+<body class="dashboard-page">
+
+<header class="top studio-top">
+  <div class="brand-block">
+    <div class="brand">TEXTDOC <b>STUDIO</b></div>
+    <div class="brand-sub">DOCUMENTARY ENGINE</div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <a class="btn ghost" href="/settings">⚙ YouTube</a>
+  <button class="btn gold new-doc" onclick="createProject()">＋ New Documentary</button>
+</header>
+
+<main class="dashboard-shell">
+
+  <section class="dashboard-hero">
+    <div>
+      <div class="hero-kicker">LOCAL DOCUMENTARY WORKSPACE</div>
+
+      <h1>
+        Turn research into<br>
+        <span>documentary stories.</span>
+      </h1>
+
+      <p>
+        Write the story. Add the evidence. TextDoc handles narration,
+        motion, rendering and delivery.
+      </p>
+
+      <div class="workflow-strip">
+        <div>
+          <b>01</b>
+          <span>Story</span>
+        </div>
+
+        <i>→</i>
+
+        <div>
+          <b>02</b>
+          <span>Evidence</span>
+        </div>
+
+        <i>→</i>
+
+        <div>
+          <b>03</b>
+          <span>Direct</span>
+        </div>
+
+        <i>→</i>
+
+        <div>
+          <b>04</b>
+          <span>Render</span>
+        </div>
+
+        <i>→</i>
+
+        <div>
+          <b>05</b>
+          <span>Publish</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="hero-create" onclick="createProject()">
+      <span class="hero-plus">＋</span>
+      <strong>Start a documentary</strong>
+      <small>Paste a script or build scene by scene</small>
+    </button>
+  </section>
+
+  <section class="projects-section">
+
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">WORKSPACE</div>
+        <h2>Your Documentaries</h2>
+      </div>
+
+      <div class="project-count">
+        {{ projects|length }}
+        {{ 'PROJECT' if projects|length == 1 else 'PROJECTS' }}
+      </div>
+    </div>
+
+    <div class="project-grid-v2">
+
+      {% for p in projects %}
+
+      <article class="project-v2">
+
+        <div class="project-visual">
+
+          {% if p.rendered %}
+          <video
+            muted
+            preload="metadata"
+            src="/video/{{p.id}}#t=1"
+          ></video>
+          {% else %}
+          <div class="project-empty">
+            <span>TD</span>
+          </div>
+          {% endif %}
+
+          <div class="project-status {{ 'ready' if p.rendered else '' }}">
+            <i></i>
+            {{ 'RENDERED' if p.rendered else 'DRAFT' }}
+          </div>
+
+        </div>
+
+        <div class="project-body">
+
+          <div class="project-type">
+            DOCUMENTARY
+          </div>
+
+          <h3>{{p.title}}</h3>
+
+          <div class="project-meta">
+            <span>{{p.scenes|length}} scenes</span>
+            <span>•</span>
+            <span>{{p.format or '16:9'}}</span>
+            <span>•</span>
+            <span>{{p.quality or '1080p'}}</span>
+          </div>
+
+          <a class="project-open" href="/project/{{p.id}}">
+            Continue editing
+            <span>→</span>
+          </a>
+
+        </div>
+
+      </article>
+
+      {% endfor %}
+
+      <button class="project-v2 project-new-card" onclick="createProject()">
+        <span>＋</span>
+        <b>New Documentary</b>
+        <small>Create another production</small>
+      </button>
+
+    </div>
+
+  </section>
+
+</main>
+
+<script>
+async function createProject(){
+  let title=prompt('Documentary title','Untitled Documentary');
+
+  if(!title)return;
+
+  let r=await fetch('/api/projects',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({title})
+  });
+
+  let p=await r.json();
+  location='/project/'+p.id;
+}
+</script>
+
+</body>
+</html>
