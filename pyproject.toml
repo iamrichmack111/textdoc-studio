@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "textdoc-cli"
+version = "3.0.1"
+description = "Zero-API cinematic text documentary generator"
+requires-python = ">=3.10"
+
+[project.scripts]
+textdoc = "textdoc.cli:main"
+
+[tool.setuptools]
+packages = ["textdoc", "textdoc_studio"]
+
+[tool.setuptools.package-data]
+textdoc_studio = ["templates/*.html", "static/*.css", "static/*.js"]

@@ -1,0 +1,571 @@
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+import wave
+from pathlib import Path
+
+from .cinematic import image_files, make_cinematic_scene
+
+
+VOICE = Path("/home/richmack/textdoc-cli/voices/en_GB-alan-medium.onnx")
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def run(cmd, stdin=None):
+    print("[doc]", " ".join(map(str, cmd)))
+    p = subprocess.run(
+        [str(x) for x in cmd],
+        input=stdin,
+        text=True,
+    )
+    if p.returncode:
+        raise RuntimeError("Command failed")
+    return p
+
+
+def clean(s):
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def duration_wav(path):
+    with wave.open(str(path), "rb") as w:
+        return w.getnframes() / float(w.getframerate())
+
+
+def ass_escape(s):
+    marker = "<<<NL>>>"
+    s = s.replace(r"\N", marker)
+    s = s.replace("\\", "")
+    s = s.replace("{", r"\{").replace("}", r"\}")
+    return s.replace(marker, r"\N")
+
+
+def wrap_ass(text, width=36):
+    import textwrap
+    return r"\N".join(
+        textwrap.wrap(
+            clean(text),
+            width=width,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+    )
+
+
+def parse_document(path):
+    raw = Path(path).read_text(encoding="utf-8")
+
+    title = Path(path).stem.replace("_", " ").replace("-", " ").title()
+
+    m = re.search(r"^TITLE:\s*(.+)$", raw, re.I | re.M)
+    if m:
+        title = clean(m.group(1))
+        raw = raw[:m.start()] + raw[m.end():]
+
+    blocks = [
+        b.strip()
+        for b in re.split(r"\n\s*\n", raw)
+        if b.strip()
+    ]
+
+    scenes = []
+
+    for block in blocks:
+        kind = "narration"
+        image = ""
+        source = ""
+
+        m = re.match(
+            r"^\[(CHAPTER|PUNCH|QUOTE|WORDS)\]\s*",
+            block,
+            re.I,
+        )
+
+        if m:
+            kind = m.group(1).lower()
+            block = block[m.end():]
+
+        im = re.search(r"\nIMAGE:\s*(.+)$", block, re.I)
+        if im:
+            image = clean(im.group(1))
+            block = block[:im.start()] + block[im.end():]
+
+        sm = re.search(r"\nSOURCE:\s*(.+)$", block, re.I)
+        if sm:
+            source = clean(sm.group(1))
+            block = block[:sm.start()] + block[sm.end():]
+
+        text = clean(block)
+
+        if text:
+            scenes.append({
+                "kind": kind,
+                "text": text,
+                "image": image,
+                "source": source,
+            })
+
+    if not scenes:
+        raise RuntimeError("No narration found.")
+
+    return title, scenes
+
+
+def find_input(directory):
+    root = Path(directory).expanduser().resolve()
+
+    if not root.is_dir():
+        raise RuntimeError(f"Not a directory: {root}")
+
+    preferred = root / "narration.txt"
+
+    if preferred.exists():
+        script = preferred
+    else:
+        txts = sorted(root.glob("*.txt"))
+
+        if not txts:
+            raise RuntimeError(
+                "Directory needs narration.txt or another .txt file."
+            )
+
+        script = txts[0]
+
+    picture_dir = root / "pictures"
+
+    if not picture_dir.exists():
+        picture_dir = root
+
+    pictures = [
+        p for p in picture_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+    ]
+
+    pictures.sort()
+
+    if not pictures:
+        raise RuntimeError(
+            f"No JPG/PNG/WebP images found under {picture_dir}"
+        )
+
+    return root, script, pictures
+
+
+def choose_picture(scene, pictures, index):
+    requested = scene.get("image", "").strip()
+
+    if requested:
+        wanted = Path(requested).name.lower()
+
+        for p in pictures:
+            if p.name.lower() == wanted:
+                return p
+
+        print(
+            f"[warning] IMAGE requested but not found: {requested}"
+        )
+
+    tokens = {
+        x for x in re.findall(
+            r"[a-z0-9]+",
+            scene["text"].lower()
+        )
+        if len(x) >= 4
+    }
+
+    scored = []
+
+    for p in pictures:
+        filename_tokens = set(
+            re.findall(
+                r"[a-z0-9]+",
+                p.stem.lower().replace("-", " ").replace("_", " ")
+            )
+        )
+
+        score = len(tokens & filename_tokens)
+        scored.append((score, p))
+
+    scored.sort(key=lambda x: (-x[0], str(x[1])))
+
+    if scored and scored[0][0] > 0:
+        return scored[0][1]
+
+    return pictures[index % len(pictures)]
+
+
+def speak(text, output, speed=1.0):
+    if not VOICE.exists():
+        raise RuntimeError(f"Piper voice missing: {VOICE}")
+
+    cmd = [
+        "piper",
+        "--model", str(VOICE),
+        "--output_file", str(output),
+    ]
+
+    run(cmd, stdin=text + "\n")
+
+    # Piper's native output is retained when speed == 1.
+    if abs(speed - 1.0) > 0.001:
+        adjusted = output.with_name(output.stem + "-speed.wav")
+
+        # atempo supports 0.5–2.0 per stage.
+        factor = max(0.5, min(2.0, speed))
+
+        run([
+            "ffmpeg", "-y", "-v", "error",
+            "-i", output,
+            "-af", f"atempo={factor}",
+            adjusted,
+        ])
+
+        adjusted.replace(output)
+
+
+def timestamp(t):
+    h = int(t // 3600)
+    m = int((t % 3600) // 60)
+    s = t % 60
+    return f"{h}:{m:02d}:{s:05.2f}"
+
+
+def make_ass(scene, duration, output, index, total):
+    kind = scene["kind"]
+    text = scene["text"]
+
+    header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Caption,DejaVu Sans,54,&H00EEECE7,&H00FFFFFF,&H00101010,&H78000000,0,0,0,0,100,100,1,0,1,2,1,2,160,160,105,1
+Style: Hero,DejaVu Sans,94,&H00F5F2EA,&H00FFFFFF,&H00101010,&H44000000,-1,0,0,0,100,100,3,0,1,2,1,5,150,150,100,1
+Style: Gold,DejaVu Sans,30,&H007CC8E8,&H00FFFFFF,&H00101010,&H33000000,-1,0,0,0,100,100,2,0,1,1,0,7,90,90,80,1
+Style: Quote,DejaVu Serif,60,&H00F5F2EA,&H00FFFFFF,&H00101010,&H55000000,0,-1,0,0,100,100,1,0,1,2,1,5,240,240,120,1
+Style: Footer,DejaVu Sans,23,&H009A958D,&H00FFFFFF,&H00101010,&H33000000,0,0,0,0,100,100,1,0,1,1,0,3,60,60,35,1
+
+[Events]
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+"""
+
+    lines = []
+
+    end = timestamp(duration)
+
+    lines.append(
+        f"Dialogue: 0,0:00:00.00,{end},Footer,,0,0,0,,"
+        f"{{\\fad(150,150)}}{index:02d}  /  {total:02d}"
+    )
+
+    if kind == "chapter":
+        shown = wrap_ass(text.upper(), 24)
+        lines.append(
+            f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
+            f"{{\\fad(350,450)\\an5\\pos(960,520)}}"
+            f"{ass_escape(shown)}"
+        )
+
+    elif kind == "punch":
+        shown = wrap_ass(text.upper(), 21)
+        lines.append(
+            f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
+            f"{{\\fad(180,300)\\an5\\pos(960,520)}}"
+            f"{ass_escape(shown)}"
+        )
+
+    elif kind == "quote":
+        shown = "“" + wrap_ass(text, 34) + "”"
+        lines.append(
+            f"Dialogue: 3,0:00:00.00,{end},Quote,,0,0,0,,"
+            f"{{\\fad(300,350)\\an5\\pos(960,525)}}"
+            f"{ass_escape(shown)}"
+        )
+
+    elif kind == "words":
+        words = [
+            x.strip()
+            for x in re.split(r"[,;]", text)
+            if x.strip()
+        ]
+
+        if not words:
+            words = [text]
+
+        segment = duration / len(words)
+
+        for i, word in enumerate(words):
+            st = timestamp(i * segment)
+            en = timestamp(min(duration, (i + 1) * segment))
+
+            lines.append(
+                f"Dialogue: 3,{st},{en},Hero,,0,0,0,,"
+                f"{{\\fad(100,120)\\an5\\pos(960,520)}}"
+                f"{ass_escape(word.upper())}"
+            )
+
+    else:
+        #
+        # Phrase-follow highlighting.
+        #
+        # We do not yet have forced alignment, so distribute phrases
+        # according to word count over the real Piper duration.
+        #
+        words = text.split()
+
+        phrases = [
+            words[i:i + 6]
+            for i in range(0, len(words), 6)
+        ]
+
+        total_words = max(1, len(words))
+        cursor = 0.0
+
+        for phrase in phrases:
+            portion = len(phrase) / total_words
+            segment = duration * portion
+
+            st = timestamp(cursor)
+            en = timestamp(min(duration, cursor + segment))
+
+            shown = wrap_ass(" ".join(phrase), 32)
+
+            # Gold active phrase.
+            lines.append(
+                f"Dialogue: 3,{st},{en},Caption,,0,0,0,,"
+                f"{{\\c&H007CC8E8&\\b1\\fad(70,90)"
+                f"\\an2\\pos(960,890)}}"
+                f"{ass_escape(shown)}"
+            )
+
+            cursor += segment
+
+    if scene.get("source"):
+        lines.append(
+            f"Dialogue: 4,0:00:00.00,{end},Gold,,0,0,0,,"
+            f"{{\\fad(200,200)\\an7\\pos(100,100)}}"
+            f"SOURCE • {ass_escape(scene['source'])}"
+        )
+
+    Path(output).write_text(
+        header + "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+
+
+def mux_audio(video, audio, output):
+    run([
+        "ffmpeg", "-y", "-v", "error",
+        "-i", video,
+        "-i", audio,
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+        "-shortest",
+        output,
+    ])
+
+
+def concat(parts, output):
+    listfile = output.parent / "concat.txt"
+
+    listfile.write_text(
+        "".join(
+            f"file '{p.resolve().as_posix()}'\n"
+            for p in parts
+        ),
+        encoding="utf-8",
+    )
+
+    # Re-encode final video so scene boundaries are clean.
+    run([
+        "ffmpeg", "-y", "-v", "error",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", listfile,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        output,
+    ])
+
+
+def build(directory, output=None):
+    root, script, pictures = find_input(directory)
+
+    title, scenes = parse_document(script)
+
+    outdir = root / "output"
+    outdir.mkdir(exist_ok=True)
+
+    if output:
+        final = Path(output).expanduser().resolve()
+        final.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        final = outdir / (
+            re.sub(r"[^A-Za-z0-9_-]+", "-", title.lower()).strip("-")
+            + ".mp4"
+        )
+
+    work = Path(
+        tempfile.mkdtemp(
+            prefix="textdoc-documentary-",
+            dir=str(outdir),
+        )
+    )
+
+    print()
+    print("==========================================")
+    print(" TEXTDOC DOCUMENTARY")
+    print("==========================================")
+    print("TITLE:   ", title)
+    print("SCRIPT:  ", script)
+    print("PICTURES:", len(pictures))
+    print("SCENES:  ", len(scenes))
+    print("OUTPUT:  ", final)
+    print("==========================================")
+    print()
+
+    completed = []
+
+    try:
+        for i, scene in enumerate(scenes):
+            number = i + 1
+
+            primary = choose_picture(
+                scene,
+                pictures,
+                i,
+            )
+
+            secondary = pictures[
+                (pictures.index(primary) + 1) % len(pictures)
+            ]
+
+            wav = work / f"{number:03d}.wav"
+            ass = work / f"{number:03d}.ass"
+            silent = work / f"{number:03d}-silent.mp4"
+            complete = work / f"{number:03d}.mp4"
+
+            print()
+            print(
+                f"[scene {number}/{len(scenes)}] "
+                f"{scene['kind']}"
+            )
+            print("  image:", primary.name)
+            print("  text :", scene["text"][:90])
+
+            # Narrate every block, including chapter/punch/quote/words.
+            speak(scene["text"], wav)
+
+            d = duration_wav(wav) + 0.35
+
+            make_ass(
+                scene,
+                d,
+                ass,
+                number,
+                len(scenes),
+            )
+
+            make_cinematic_scene(
+                primary=primary,
+                secondary=secondary,
+                ass_file=ass,
+                output=silent,
+                duration=d,
+                width=1920,
+                height=1080,
+                fps=30,
+                preset="veryfast",
+                crf=20,
+            )
+
+            mux_audio(
+                silent,
+                wav,
+                complete,
+            )
+
+            completed.append(complete)
+
+        concat(completed, final)
+
+        metadata = {
+            "title": title,
+            "script": str(script),
+            "pictures": [
+                str(x) for x in pictures
+            ],
+            "scenes": scenes,
+            "output": str(final),
+        }
+
+        final.with_suffix(".json").write_text(
+            json.dumps(
+                metadata,
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    finally:
+        # Keep work on failure for debugging.
+        if final.exists():
+            shutil.rmtree(work, ignore_errors=True)
+        else:
+            print()
+            print("Build failed; work directory retained:")
+            print(work)
+
+    print()
+    print("==========================================")
+    print(" DOCUMENTARY COMPLETE")
+    print("==========================================")
+    print(final)
+    print()
+
+    return final
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="TextDoc directory documentary builder"
+    )
+
+    ap.add_argument(
+        "directory",
+        help="Folder containing narration.txt and pictures/",
+    )
+
+    ap.add_argument(
+        "-o",
+        "--output",
+    )
+
+    args = ap.parse_args()
+
+    build(
+        args.directory,
+        args.output,
+    )
+
+
+if __name__ == "__main__":
+    main()
