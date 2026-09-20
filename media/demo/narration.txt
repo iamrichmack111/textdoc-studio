@@ -1,0 +1,9 @@
+Welcome to TextDoc Studio, a local-first documentary production system built around story instead of a traditional editing timeline.
+
+The Media Library holds local photographs, documents, maps, and illustrations. The Story Stack represents the production as semantic scenes: narration, chapter, quote, punch, words, document, map, and B-roll.
+
+The Scene Inspector controls narration, visual assignment, labels, and source information. The Scene Guide explains how each treatment behaves. Export preflight checks the project before delivery.
+
+Piper generates narration locally, TextDoc directs the visual treatment, and FFmpeg creates the finished documentary. Completed work can be previewed, downloaded as video or audio, and prepared for a private YouTube upload.
+
+TextDoc Studio. Make the story, not the timeline.

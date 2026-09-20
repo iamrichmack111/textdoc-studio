@@ -1,0 +1,71 @@
+direction: down
+creator: { label: "Documentary Creator"; shape: person }
+browser: { label: "TextDoc Studio\nBrowser UI" }
+studio: {
+  label: "Flask Studio"
+  dashboard: { label: "Project Dashboard" }
+  story: { label: "Story Stack" }
+  media: { label: "Media Library" }
+  inspector: { label: "Director Inspector" }
+  preflight: { label: "Preflight + Export" }
+  youtube: { label: "YouTube Metadata" }
+}
+project: {
+  label: "Project Workspace"
+  json: { label: "Project JSON"; shape: document }
+  pictures: { label: "Local Pictures"; shape: stored_data }
+  sources: { label: "Sources / Credits"; shape: document }
+}
+pipeline: {
+  label: "Documentary V4 Pipeline"
+  documentary: { label: "documentary_v4.py" }
+  director: { label: "director_v4.py\nEditorial Director" }
+  cinematic: { label: "cinematic_v4.py\nVisual Treatments" }
+}
+treatments: {
+  label: "Scene Treatments"
+  archive: { label: "Archive / B-roll\nKen Burns" }
+  document: { label: "Document / Map\nEvidence Framing" }
+  graphics: { label: "Typography\nChapter / Quote / Punch / Words" }
+}
+audio: {
+  label: "Narration"
+  piper: { label: "Piper TTS" }
+  voice: { label: "Local Voice Model"; shape: stored_data }
+}
+ffmpeg: { label: "FFmpeg Render Engine" }
+delivery: {
+  label: "Delivery"
+  video: { label: "Documentary MP4"; shape: document }
+  mp3: { label: "Audio MP3"; shape: document }
+  preview: { label: "Studio Preview" }
+  yt: { label: "Private YouTube Upload" }
+}
+creator -> browser: "write / direct"
+browser -> studio.dashboard
+studio.dashboard -> studio.story
+studio.story -> studio.inspector
+studio.media -> studio.inspector
+studio.story -> project.json
+studio.media -> project.pictures
+studio.inspector -> project.sources
+project.json -> pipeline.documentary
+project.pictures -> pipeline.documentary
+project.sources -> pipeline.documentary
+pipeline.documentary -> pipeline.director: "scene intent"
+pipeline.director -> pipeline.cinematic: "treatment plan"
+pipeline.cinematic -> treatments.archive
+pipeline.cinematic -> treatments.document
+pipeline.cinematic -> treatments.graphics
+audio.voice -> audio.piper
+pipeline.documentary -> audio.piper: "scene narration"
+treatments.archive -> ffmpeg
+treatments.document -> ffmpeg
+treatments.graphics -> ffmpeg
+audio.piper -> ffmpeg
+ffmpeg -> delivery.video
+delivery.video -> delivery.preview
+delivery.video -> delivery.mp3
+delivery.video -> delivery.yt
+studio.preflight -> delivery.video
+studio.youtube -> delivery.yt
