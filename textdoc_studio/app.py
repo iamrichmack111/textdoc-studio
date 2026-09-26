@@ -45,18 +45,21 @@ def scene_block(s):
     if typ != 'NARRATION':
         lines.append(f'[{typ}]')
 
-    # Put renderer metadata BEFORE prose so it can never become narration.
+    # Keep spoken text first; the renderer strips trailing IMAGE metadata.
+    lines.append(text)
+
     if s.get('image'):
         lines.append('IMAGE: '+Path(s['image']).name)
 
-    lines.append(text)
+    if s.get('label'):
+        lines.append('LABEL: '+s['label'].strip())
 
     # Source metadata remains owned by Studio/YouTube description.
     return '\n'.join(x for x in lines if x)
 
 def build_input(p):
     d=pdir(p['id']); pics=d/'pictures'; pics.mkdir(exist_ok=True)
-    txt=(p.get('title') or 'Untitled Documentary')+'\n\n'+ '\n\n'.join(scene_block(x) for x in p.get('scenes',[]))+'\n'
+    txt='TITLE: '+(p.get('title') or 'Untitled Documentary')+'\n\n'+ '\n\n'.join(scene_block(x) for x in p.get('scenes',[]))+'\n'
     (d/'narration.txt').write_text(txt)
     return d
 

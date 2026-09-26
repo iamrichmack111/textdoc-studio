@@ -12,7 +12,6 @@ from pathlib import Path
 from .cinematic_v4 import (
     image_files,
     make_cinematic_scene,
-    make_fullframe_scene,
     make_graphic_scene,
     make_document_scene,
 )
@@ -255,32 +254,6 @@ def timestamp(t):
     return f"{h}:{m:02d}:{s:05.2f}"
 
 
-
-def looks_like_command(text):
-    """Return True when a QUOTE scene looks like a terminal command."""
-    text = (text or "").strip()
-    if not text:
-        return False
-
-    first = text.splitlines()[0].strip()
-
-    if first.startswith("$ "):
-        return True
-
-    commands = (
-        "kubectl ", "helm ", "docker ", "podman ",
-        "git ", "nats ", "tsp ", "systemctl ",
-        "journalctl ", "curl ", "wget ", "ssh ",
-        "scp ", "rsync ", "aws ", "terraform ",
-        "ansible ", "python ", "python3 ", "pip ",
-        "pip3 ", "npm ", "yarn ", "make ",
-        "sudo ", "ffmpeg ", "grep ", "sed ",
-        "awk ", "find ", "cat ", "ls ", "cd ",
-    )
-
-    return first.startswith(commands)
-
-
 def make_ass(scene, duration, output, index, total):
     kind = scene["kind"]
     text = scene["text"]
@@ -298,7 +271,6 @@ Style: Caption,DejaVu Sans,54,&H00EEECE7,&H00FFFFFF,&H00101010,&H78000000,0,0,0,
 Style: Hero,DejaVu Sans,94,&H00F5F2EA,&H00FFFFFF,&H00101010,&H44000000,-1,0,0,0,100,100,3,0,1,2,1,5,150,150,100,1
 Style: Gold,DejaVu Sans,30,&H007CC8E8,&H00FFFFFF,&H00101010,&H33000000,-1,0,0,0,100,100,2,0,1,1,0,7,90,90,80,1
 Style: Quote,DejaVu Serif,60,&H00F5F2EA,&H00FFFFFF,&H00101010,&H55000000,0,-1,0,0,100,100,1,0,1,2,1,5,240,240,120,1
-Style: Command,DejaVu Sans Mono,52,&H00EEECE7,&H00FFFFFF,&H00101010,&H99000000,0,0,0,0,100,100,0,0,1,3,1,5,180,180,120,1
 Style: Footer,DejaVu Sans,23,&H009A958D,&H00FFFFFF,&H00101010,&H33000000,0,0,0,0,100,100,1,0,1,1,0,3,60,60,35,1
 
 [Events]
@@ -316,40 +288,11 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
 
     if kind == "chapter":
         shown = wrap_ass(text.upper(), 24)
-
-        if index == 1:
-            # Opening title page.
-            lines.append(
-                f"Dialogue: 2,0:00:00.00,{end},Gold,,0,0,0,,"
-                f"{{\\fad(500,300)\\an5\\pos(960,355)}}"
-                f"TEXTDOC DOCUMENTARY"
-            )
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(500,500)\\an5\\pos(960,545)}}"
-                f"{ass_escape(shown)}"
-            )
-
-        elif index == total:
-            # Closing page.
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(400,800)\\an5\\pos(960,485)}}"
-                f"{ass_escape(shown)}"
-            )
-            lines.append(
-                f"Dialogue: 2,0:00:00.00,{end},Gold,,0,0,0,,"
-                f"{{\\fad(500,900)\\an5\\pos(960,700)}}"
-                f"TEXTDOC"
-            )
-
-        else:
-            # Normal section break.
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(350,450)\\an5\\pos(960,520)}}"
-                f"{ass_escape(shown)}"
-            )
+        lines.append(
+            f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
+            f"{{\\fad(350,450)\\an5\\pos(960,520)}}"
+            f"{ass_escape(shown)}"
+        )
 
     elif kind == "punch":
         shown = wrap_ass(text.upper(), 21)
@@ -360,20 +303,12 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
         )
 
     elif kind == "quote":
-        if looks_like_command(text):
-            shown = wrap_ass(text, 48)
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Command,,0,0,0,,"
-                f"{{\\fad(180,250)\\an5\\pos(960,525)}}"
-                f"{ass_escape(shown)}"
-            )
-        else:
-            shown = "“" + wrap_ass(text, 34) + "”"
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Quote,,0,0,0,,"
-                f"{{\\fad(300,350)\\an5\\pos(960,525)}}"
-                f"{ass_escape(shown)}"
-            )
+        shown = "“" + wrap_ass(text, 34) + "”"
+        lines.append(
+            f"Dialogue: 3,0:00:00.00,{end},Quote,,0,0,0,,"
+            f"{{\\fad(300,350)\\an5\\pos(960,525)}}"
+            f"{ass_escape(shown)}"
+        )
 
     elif kind == "words":
         words = [
@@ -508,25 +443,6 @@ def build(directory, output=None):
 
     title, scenes = parse_document(script)
 
-    # Always give the documentary a real opening and closing page.
-    if not scenes or scenes[0].get("kind") != "chapter":
-        scenes.insert(0, {
-            "kind": "chapter",
-            "text": title,
-            "image": "",
-            "source": "",
-            "label": "",
-        })
-
-    if scenes[-1].get("kind") != "chapter":
-        scenes.append({
-            "kind": "chapter",
-            "text": f"{title}\nEND",
-            "image": "",
-            "source": "",
-            "label": "",
-        })
-
     outdir = root / "output"
     outdir.mkdir(exist_ok=True)
 
@@ -597,17 +513,6 @@ def build(directory, output=None):
                 else None
             )
 
-            # Never leave photographic scenes with an accidental blank frame.
-            # If Director found no image, reuse a project picture deterministically.
-            scene_kind = str(scene.get("kind", "narration")).lower()
-
-            if (
-                primary is None
-                and scene_kind in {"narration", "b-roll", "map"}
-                and pictures
-            ):
-                primary = Path(pictures[i % len(pictures)])
-
             secondary = (
                 Path(decision["secondary"])
                 if decision.get("secondary")
@@ -615,26 +520,6 @@ def build(directory, output=None):
             )
 
             treatment = decision["treatment"]
-
-            # Scene semantics win over Director image classification.
-            # This prevents ordinary photos from turning narration into
-            # document/PiP scenes merely because of asset analysis.
-            scene_kind = str(scene.get("kind", "narration")).lower()
-
-            if scene_kind == "narration":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "b-roll":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "map":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "document":
-                treatment = "document" if primary is not None else "narration"
-
-            elif scene_kind in {"chapter", "punch", "quote", "words"}:
-                treatment = scene_kind
 
             wav = work / f"{number:03d}.wav"
             ass = work / f"{number:03d}.ass"
@@ -659,14 +544,7 @@ def build(directory, output=None):
                 speak(scene["label"], wav)
                 d = duration_wav(wav) + 0.35
 
-            elif (
-                scene.get("kind") in {"document", "map", "b-roll"}
-                or (
-                    scene.get("kind") == "quote"
-                    and looks_like_command(scene.get("text", ""))
-                )
-            ):
-                # Visual-only scenes and terminal-command quotes.
+            elif scene.get("kind") in {"document", "map", "b-roll"}:
                 d = 3.5
                 run([
                     "ffmpeg", "-y", "-v", "error",
@@ -709,29 +587,6 @@ def build(directory, output=None):
                     output=silent,
                     duration=d,
                     treatment=treatment,
-                    width=1920,
-                    height=1080,
-                    fps=30,
-                    preset="veryfast",
-                    crf=20,
-                )
-
-            elif treatment == "fullframe":
-                if primary is None:
-                    raise RuntimeError(
-                        "Full-frame scene selected without an image"
-                    )
-
-                print(
-                    "  visual:",
-                    "V4 FULL-FRAME CINEMATIC"
-                )
-
-                make_fullframe_scene(
-                    image=primary,
-                    ass_file=ass,
-                    output=silent,
-                    duration=d,
                     width=1920,
                     height=1080,
                     fps=30,

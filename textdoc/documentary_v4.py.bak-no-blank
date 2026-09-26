@@ -12,7 +12,6 @@ from pathlib import Path
 from .cinematic_v4 import (
     image_files,
     make_cinematic_scene,
-    make_fullframe_scene,
     make_graphic_scene,
     make_document_scene,
 )
@@ -597,17 +596,6 @@ def build(directory, output=None):
                 else None
             )
 
-            # Never leave photographic scenes with an accidental blank frame.
-            # If Director found no image, reuse a project picture deterministically.
-            scene_kind = str(scene.get("kind", "narration")).lower()
-
-            if (
-                primary is None
-                and scene_kind in {"narration", "b-roll", "map"}
-                and pictures
-            ):
-                primary = Path(pictures[i % len(pictures)])
-
             secondary = (
                 Path(decision["secondary"])
                 if decision.get("secondary")
@@ -622,16 +610,16 @@ def build(directory, output=None):
             scene_kind = str(scene.get("kind", "narration")).lower()
 
             if scene_kind == "narration":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "b-roll":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "map":
-                treatment = "fullframe" if primary is not None else "narration"
+                treatment = "archive" if primary is not None else "narration"
 
             elif scene_kind == "document":
                 treatment = "document" if primary is not None else "narration"
+
+            elif scene_kind == "b-roll":
+                treatment = "archive" if primary is not None else "narration"
+
+            elif scene_kind == "map":
+                treatment = "archive" if primary is not None else "narration"
 
             elif scene_kind in {"chapter", "punch", "quote", "words"}:
                 treatment = scene_kind
@@ -709,29 +697,6 @@ def build(directory, output=None):
                     output=silent,
                     duration=d,
                     treatment=treatment,
-                    width=1920,
-                    height=1080,
-                    fps=30,
-                    preset="veryfast",
-                    crf=20,
-                )
-
-            elif treatment == "fullframe":
-                if primary is None:
-                    raise RuntimeError(
-                        "Full-frame scene selected without an image"
-                    )
-
-                print(
-                    "  visual:",
-                    "V4 FULL-FRAME CINEMATIC"
-                )
-
-                make_fullframe_scene(
-                    image=primary,
-                    ass_file=ass,
-                    output=silent,
-                    duration=d,
                     width=1920,
                     height=1080,
                     fps=30,

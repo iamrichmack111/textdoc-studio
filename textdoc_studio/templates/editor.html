@@ -125,7 +125,7 @@ WORDS COULD BECOME OBJECTS OF POWER."
 const PID={{p.id|tojson}}, TYPES=['narration','chapter','quote','punch','words','document','map','b-roll']; let P=null,active=-1,dragIndex=null;
 function sceneId(){
   if(window.crypto && typeof window.crypto.randomUUID==='function'){
-    return window.sceneId();
+    return window.crypto.randomUUID();
   }
 
   if(window.crypto && typeof window.crypto.getRandomValues==='function'){
@@ -495,11 +495,6 @@ function parseImportedStory(raw){
       continue;
     }
 
-    if(cur.type==='chapter' && !cur.label && line){
-      cur.label=line;
-      continue;
-    }
-
     cur.text += original+'\n';
   }
 
@@ -675,35 +670,48 @@ function mediaUseCount(name){
 
 function autoAssignImages(){
   if(!P.media.length){
-    alert('Upload pictures first.');
+    alert("Upload pictures first.");
     return;
   }
 
   const compatible=P.scenes.filter(
-    s=>['narration','document','map','b-roll'].includes(s.type)
+    s=>["narration","document","map","b-roll"].includes(s.type)
   );
 
-  if(!compatible.length){
-    alert('There are no photographic scenes to assign.');
-    return;
+  const available=new Set(P.media);
+  const usage={};
+  P.media.forEach(name=>usage[name]=0);
+
+  for(const scene of P.scenes){
+    if(scene.image && available.has(scene.image)){
+      usage[scene.image]=(usage[scene.image]||0)+1;
+    }
   }
 
-  let cursor=0;
-  let previous='';
+  let recent=[];
 
   for(const scene of compatible){
-    if(scene.image)continue;
-
-    let chosen=P.media[cursor % P.media.length];
-
-    if(P.media.length>1 && chosen===previous){
-      cursor++;
-      chosen=P.media[cursor % P.media.length];
+    if(scene.image && !available.has(scene.image)){
+      scene.image="";
     }
 
-    scene.image=chosen;
-    previous=chosen;
-    cursor++;
+    if(scene.image){
+      recent.push(scene.image);
+      recent=recent.slice(-2);
+      continue;
+    }
+
+    const choices=P.media
+      .map((name,index)=>({name,index,count:usage[name]||0}))
+      .sort((a,b)=>a.count-b.count || a.index-b.index);
+
+    let pick=choices.find(x=>!recent.includes(x.name));
+    if(!pick) pick=choices[0];
+
+    scene.image=pick.name;
+    usage[pick.name]=(usage[pick.name]||0)+1;
+    recent.push(pick.name);
+    recent=recent.slice(-2);
   }
 
   drawMedia();

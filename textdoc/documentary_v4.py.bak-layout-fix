@@ -12,7 +12,6 @@ from pathlib import Path
 from .cinematic_v4 import (
     image_files,
     make_cinematic_scene,
-    make_fullframe_scene,
     make_graphic_scene,
     make_document_scene,
 )
@@ -316,40 +315,11 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
 
     if kind == "chapter":
         shown = wrap_ass(text.upper(), 24)
-
-        if index == 1:
-            # Opening title page.
-            lines.append(
-                f"Dialogue: 2,0:00:00.00,{end},Gold,,0,0,0,,"
-                f"{{\\fad(500,300)\\an5\\pos(960,355)}}"
-                f"TEXTDOC DOCUMENTARY"
-            )
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(500,500)\\an5\\pos(960,545)}}"
-                f"{ass_escape(shown)}"
-            )
-
-        elif index == total:
-            # Closing page.
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(400,800)\\an5\\pos(960,485)}}"
-                f"{ass_escape(shown)}"
-            )
-            lines.append(
-                f"Dialogue: 2,0:00:00.00,{end},Gold,,0,0,0,,"
-                f"{{\\fad(500,900)\\an5\\pos(960,700)}}"
-                f"TEXTDOC"
-            )
-
-        else:
-            # Normal section break.
-            lines.append(
-                f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(350,450)\\an5\\pos(960,520)}}"
-                f"{ass_escape(shown)}"
-            )
+        lines.append(
+            f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
+            f"{{\\fad(350,450)\\an5\\pos(960,520)}}"
+            f"{ass_escape(shown)}"
+        )
 
     elif kind == "punch":
         shown = wrap_ass(text.upper(), 21)
@@ -508,25 +478,6 @@ def build(directory, output=None):
 
     title, scenes = parse_document(script)
 
-    # Always give the documentary a real opening and closing page.
-    if not scenes or scenes[0].get("kind") != "chapter":
-        scenes.insert(0, {
-            "kind": "chapter",
-            "text": title,
-            "image": "",
-            "source": "",
-            "label": "",
-        })
-
-    if scenes[-1].get("kind") != "chapter":
-        scenes.append({
-            "kind": "chapter",
-            "text": f"{title}\nEND",
-            "image": "",
-            "source": "",
-            "label": "",
-        })
-
     outdir = root / "output"
     outdir.mkdir(exist_ok=True)
 
@@ -597,17 +548,6 @@ def build(directory, output=None):
                 else None
             )
 
-            # Never leave photographic scenes with an accidental blank frame.
-            # If Director found no image, reuse a project picture deterministically.
-            scene_kind = str(scene.get("kind", "narration")).lower()
-
-            if (
-                primary is None
-                and scene_kind in {"narration", "b-roll", "map"}
-                and pictures
-            ):
-                primary = Path(pictures[i % len(pictures)])
-
             secondary = (
                 Path(decision["secondary"])
                 if decision.get("secondary")
@@ -615,26 +555,6 @@ def build(directory, output=None):
             )
 
             treatment = decision["treatment"]
-
-            # Scene semantics win over Director image classification.
-            # This prevents ordinary photos from turning narration into
-            # document/PiP scenes merely because of asset analysis.
-            scene_kind = str(scene.get("kind", "narration")).lower()
-
-            if scene_kind == "narration":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "b-roll":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "map":
-                treatment = "fullframe" if primary is not None else "narration"
-
-            elif scene_kind == "document":
-                treatment = "document" if primary is not None else "narration"
-
-            elif scene_kind in {"chapter", "punch", "quote", "words"}:
-                treatment = scene_kind
 
             wav = work / f"{number:03d}.wav"
             ass = work / f"{number:03d}.ass"
@@ -709,29 +629,6 @@ def build(directory, output=None):
                     output=silent,
                     duration=d,
                     treatment=treatment,
-                    width=1920,
-                    height=1080,
-                    fps=30,
-                    preset="veryfast",
-                    crf=20,
-                )
-
-            elif treatment == "fullframe":
-                if primary is None:
-                    raise RuntimeError(
-                        "Full-frame scene selected without an image"
-                    )
-
-                print(
-                    "  visual:",
-                    "V4 FULL-FRAME CINEMATIC"
-                )
-
-                make_fullframe_scene(
-                    image=primary,
-                    ass_file=ass,
-                    output=silent,
-                    duration=d,
                     width=1920,
                     height=1080,
                     fps=30,
