@@ -320,13 +320,8 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
         if index == 1:
             # Opening title page.
             lines.append(
-                f"Dialogue: 2,0:00:00.00,{end},Gold,,0,0,0,,"
-                f"{{\\fad(500,300)\\an5\\pos(960,355)}}"
-                f"TEXTDOC DOCUMENTARY"
-            )
-            lines.append(
                 f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(500,500)\\an5\\pos(960,545)}}"
+                f"{{\\fad(500,500)\\an5\\pos(960,520)}}"
                 f"{ass_escape(shown)}"
             )
 
@@ -334,13 +329,8 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
             # Closing page.
             lines.append(
                 f"Dialogue: 3,0:00:00.00,{end},Hero,,0,0,0,,"
-                f"{{\\fad(400,800)\\an5\\pos(960,485)}}"
+                f"{{\\fad(400,800)\\an5\\pos(960,520)}}"
                 f"{ass_escape(shown)}"
-            )
-            lines.append(
-                f"Dialogue: 2,0:00:00.00,{end},Gold,,0,0,0,,"
-                f"{{\\fad(500,900)\\an5\\pos(960,700)}}"
-                f"TEXTDOC"
             )
 
         else:
